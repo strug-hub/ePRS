@@ -58,12 +58,13 @@ for (sim in 1:sim_count) {
     r_g_values[sim, iter] <- sum(beta_source * beta_target) / sqrt((sum(beta_source^2) * sum(beta_target^2)))
 
     # --- Simulate Phenotypes ---
+    target_noise_sd <- 0    # Figure 1 main-text setting, h2 = 1
+    # target_noise_sd <- 4  # residual-noise comparison, h2 ≈ 0.71
     y_source <- df_source %*% beta_source + rnorm(nrow(df_source), 0, 0)   
-    y_target <- df_target %*% beta_target + rnorm(n_row, 0, 0)              
+    y_target <- df_target %*% beta_target + rnorm(n_row, 0, target_noise_sd)              
 
     # --- Run "External" Source GWAS ---
-    # These source GWAS effect-size estimates define the Source PRS,
-    # and the corresponding p-values are used as external evidence for ePRS.
+    # The corresponding p-values are used as external evidence for ePRS.
     source_gwas <- vapply(1:n_col, function(i) {
       coef(summary(lm(y_source ~ df_source[, i])))[2, c(1, 4)]
     }, numeric(2))
@@ -85,7 +86,7 @@ for (sim in 1:sim_count) {
     y_test <- y_target[test_idx]
 
     # --- Method 1: Source PRS benchmark ---
-    # External-source benchmark: apply source effect sizes directly
+    # External-source benchmark: apply oracle source effect sizes directly
     # to the target cohort without refitting in the target data.
     y_pred_source <- as.vector(df_target[test_idx, ] %*% beta_source)
     source[sim, iter] <- cor(y_test, y_pred_source)
