@@ -89,7 +89,7 @@ for (sim in 1:sim_count) {
     # External-source benchmark: apply oracle source effect sizes directly
     # to the target cohort without refitting in the target data.
     y_pred_source <- as.vector(df_target[test_idx, ] %*% beta_source)
-    source[sim, iter] <- cor(y_test, y_pred_source)
+    source[sim, iter] <- cor(y_test, y_pred_source)^2
 
     # --- Method 2: P+T (Clumping and Thresholding) using Target Betas ---
     effect_size = pval_target = array(dim=n_col)
@@ -107,7 +107,7 @@ for (sim in 1:sim_count) {
     pthr = p_threshold[which.max(to_compare)]
     selected_snps = which(pval < pthr)
     y_pred = df_target[test_idx, selected_snps] %*% as.matrix(effect_size[selected_snps])
-    p_t[sim, iter] = cor(y_test, y_pred)
+    p_t[sim, iter] = cor(y_test, y_pred)^2
 
     # --- Method 3: Standard Elastic Net (EN) ---
     # Tune alpha on a validation set
@@ -124,7 +124,7 @@ for (sim in 1:sim_count) {
     # Train final model on combined train+valid set and evaluate on test set
     final_en_model <- cv.glmnet(df_target[c(train_idx, valid_idx), ], y_target[c(train_idx, valid_idx)], nfolds = 3, alpha = best_alpha_en)
     y_pred_en <- predict(final_en_model, df_target[test_idx, ], s = "lambda.min")
-    en[sim, iter] <- cor(y_test, y_pred_en)
+    en[sim, iter] <- cor(y_test, y_pred_en)^2
 
     # --- Method 4: ePRS with Elastic Net ---
     # Define the evidence term E_j from source p-values.
@@ -146,7 +146,7 @@ for (sim in 1:sim_count) {
     # Train final ePRS model and evaluate on test set
     final_eprs_model <- cv.glmnet(df_target[c(train_idx, valid_idx), ], y_target[c(train_idx, valid_idx)], nfolds = 3, alpha = best_alpha_eprs, penalty.factor = pf)
     y_pred_eprs <- predict(final_eprs_model, df_target[test_idx, ], s = "lambda.min")
-    eprs[sim, iter] <- cor(y_test, y_pred_eprs)
+    eprs[sim, iter] <- cor(y_test, y_pred_eprs)^2
     
     print(paste("sim:", sim, "| Iter:", iter, "| r_g:", round(r_g_values[sim, iter], 2)))
   }
