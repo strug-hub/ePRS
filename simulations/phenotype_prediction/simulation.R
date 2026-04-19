@@ -14,11 +14,15 @@ library(MASS)
 library(ggplot2)
 
 # --- 2. Simulation Parameters ---
-set.seed(100)
+set.seed(1000)
 sim_count <- 40           # Number of full simulation runs
 iter_count <- 40          # Number of different r_g values per run
 n_row <- 300              # Sample size of target cohort
 n_col <- 1000             # Number of simulated SNPs
+
+# Train-test splits
+train_prop <- 0.55
+valid_prop <- 0.15
 
 # Define the SNP correlation structure (AR1 with rho=0)
 ar1_cor <- function(n, rho) {
@@ -28,12 +32,13 @@ ar1_cor <- function(n, rho) {
 corr_matrix <- ar1_cor(n_col, 0)
 
 # --- 3. Initialize Result Matrices ---
-# We will compare three main methods:
+# We will compare four main methods:
+# - source: External-source benchmark
 # - p_t: P+T using target data for beta estimation
 # - en: Standard Elastic Net
-# - eprs_en: ePRS with Elastic Net
+# - eprs: ePRS with Elastic Net
 
-r_g_values <- p_t <- en <- eprs <- matrix(nrow = sim_count, ncol = iter_count)
+r_g_values <- source <- p_t <- en <- eprs <- matrix(nrow = sim_count, ncol = iter_count)
 
 # --- 4. Main Simulation Loop ---
 for (sim in 1:sim_count) {
@@ -54,25 +59,38 @@ for (sim in 1:sim_count) {
 
     # --- Simulate Phenotypes ---
     y_source <- df_source %*% beta_source + rnorm(nrow(df_source), 0, 0)   
-    y_target <- df_target %*% beta_target + rnorm(n_row, 0, 4)              
+    y_target <- df_target %*% beta_target + rnorm(n_row, 0, 0)              
 
     # --- Run "External" Source GWAS ---
-    # This generates the p-values that ePRS will use as external evidence.
-    pval <- sapply(1:n_col, function(i) {
-      summary(lm(y_source ~ df_source[, i]))$coef[2, 4]
-    })
+    # These source GWAS effect-size estimates define the Source PRS,
+    # and the corresponding p-values are used as external evidence for ePRS.
+    source_gwas <- vapply(1:n_col, function(i) {
+      coef(summary(lm(y_source ~ df_source[, i])))[2, c(1, 4)]
+    }, numeric(2))
+    beta_source_hat <- source_gwas[1, ]
+    pval <- source_gwas[2, ]
 
     # --- Split Target Data into Training/Validation/Test Sets ---
     # For tuning alpha and final evaluation
-    train_idx <- 1:160
-    valid_idx <- 161:200
-    test_idx <- 201:300
+    n_train <- floor(train_prop * n_row)
+    n_valid <- floor(valid_prop * n_row)
+    n_test  <- n_row - n_train - n_valid
+
+    train_idx <- seq_len(n_train)
+    valid_idx <- seq_len(n_valid) + n_train
+    test_idx  <- seq_len(n_test) + n_train + n_valid
 
     y_train <- y_target[train_idx]
     y_valid <- y_target[valid_idx]
     y_test <- y_target[test_idx]
 
-    # --- Method 1: P+T (Clumping and Thresholding) using Target Betas ---
+    # --- Method 1: Source PRS benchmark ---
+    # External-source benchmark: apply source effect sizes directly
+    # to the target cohort without refitting in the target data.
+    y_pred_source <- as.vector(df_target[test_idx, ] %*% beta_source)
+    source[sim, iter] <- cor(y_test, y_pred_source)
+
+    # --- Method 2: P+T (Clumping and Thresholding) using Target Betas ---
     effect_size = pval_target = array(dim=n_col)
     for(i in 1:n_col){
       model = summary(lm(y_train ~ df_target[train_idx,i]))$coef
@@ -90,7 +108,7 @@ for (sim in 1:sim_count) {
     y_pred = df_target[test_idx, selected_snps] %*% as.matrix(effect_size[selected_snps])
     p_t[sim, iter] = cor(y_test, y_pred)
 
-    # --- Method 2: Standard Elastic Net (EN) ---
+    # --- Method 3: Standard Elastic Net (EN) ---
     # Tune alpha on a validation set
     alpha_thr <- c(0, 0.2, 0.4, 0.6, 0.8, 1)
     validation_cors <- sapply(alpha_thr, function(alpha_tune) {
@@ -98,14 +116,16 @@ for (sim in 1:sim_count) {
       y_pred_valid <- predict(m, df_target[valid_idx, ], s = "lambda.min")
       cor(y_valid, y_pred_valid)
     })
+    # Fall back to ridge regression if no predictors are selected during cross-validation
     best_alpha_en <- alpha_thr[which.max(validation_cors)]
+    best_alpha_en <- ifelse(sum(is.na(alpha_thr[validation_cors]))==length(alpha_thr), 0, alpha_thr[which.max(validation_cors)])
     
     # Train final model on combined train+valid set and evaluate on test set
     final_en_model <- cv.glmnet(df_target[c(train_idx, valid_idx), ], y_target[c(train_idx, valid_idx)], nfolds = 3, alpha = best_alpha_en)
     y_pred_en <- predict(final_en_model, df_target[test_idx, ], s = "lambda.min")
     en[sim, iter] <- cor(y_test, y_pred_en)
 
-    # --- Method 3: ePRS with Elastic Net ---
+    # --- Method 4: ePRS with Elastic Net ---
     # Define the evidence term E_j from source p-values.
     # We use a transformation that is more sensitive to p-value changes than -log10(p).
     E_j <- 1/-log10(pval)
@@ -132,14 +152,14 @@ for (sim in 1:sim_count) {
 }
 
 # --- 5. Plotting Results ---
-df = data.frame(r_sq=c(p_t,en,eprs),
-                rg=rep(r_g, 3),
-                method=rep(c("P+T","EN","ePRS"), each=1600))
+df = data.frame(r_sq = c(source, p_t, en, eprs),
+                rg = rep(r_g_values, 4),
+                method = rep(c("Source", "P+T", "EN", "ePRS"), each = sim_count * iter_count))
 
+ggplot(df, aes(x = rg, y = r_sq)) + 
+  geom_point(aes(col = method)) +
+  geom_smooth(col = "black", lty = "dashed") +
+  facet_grid(method ~ .)
 
-ggplot(df, aes(x=rg, y=r_sq)) + geom_point(aes(col=method)) +
-  geom_smooth(col="black", lty="dashed") +
-  facet_grid(method~.)
-
-ggplot(df, aes(x=rg, y=r_sq)) +
-  geom_smooth(aes(col=method), lty="dashed", se=F)
+ggplot(df, aes(x = rg, y = r_sq)) +
+  geom_smooth(aes(col = method), lty = "dashed", se = FALSE)
