@@ -58,8 +58,7 @@ for (sim in 1:sim_count) {
     r_g_values[sim, iter] <- sum(beta_source * beta_target) / sqrt((sum(beta_source^2) * sum(beta_target^2)))
 
     # --- Simulate Phenotypes ---
-    target_noise_sd <- 0    # Figure 1 main-text setting, h2 = 1
-    # target_noise_sd <- 4  # residual-noise comparison, h2 ≈ 0.71
+    target_noise_sd <- 4 
     y_source <- df_source %*% beta_source + rnorm(nrow(df_source), 0, 0)   
     y_target <- df_target %*% beta_target + rnorm(n_row, 0, target_noise_sd)              
 
