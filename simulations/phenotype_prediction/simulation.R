@@ -128,8 +128,8 @@ for (sim in 1:sim_count) {
     # --- Method 4: ePRS with Elastic Net ---
     # Define the evidence term E_j from source p-values.
     # We use a transformation that is more sensitive to p-value changes than -log10(p).
-    E_j <- 1/-log10(pval)
-    # E_j <- 10 * (1 - (1 - pval)^8)
+    # E_j <- 1/-log10(pval)
+    E_j <- 10 * (1 - (1 - pval)^8)
 
     # The penalty factor combines external evidence (E_j) with genetic correlation (r_g)
     pf <- E_j * r_g_values[sim, iter] + (1 - r_g_values[sim, iter])
