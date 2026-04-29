@@ -154,8 +154,8 @@ for (sim in 1:sim_count) {
     en[sim, iter] <- roc(y_test_final, as.vector(pred_en), direction = "<", quiet=TRUE)$auc
     
     ##-- Method 3: ePRS with Elastic Net --##
-    E_j <- 1 / -log10(source_pvals)
-    #E_j <- 10*(1 - (1-source_pvals)^8)
+    # E_j <- 1 / -log10(source_pvals)
+    E_j <- 10*(1 - (1-source_pvals)^8)
     E_j[is.infinite(E_j)] <- 1e6 # Handle p=1 case
     pf <- E_j * r_g_eprs[sim, iter] + (1 - r_g_eprs[sim, iter])
     
